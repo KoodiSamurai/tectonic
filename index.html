@@ -1,0 +1,1766 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tectonic – Logiikkapeli</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          },
+          colors: {
+            boardBg: '#f8fafc',
+            slateBorder: '#1e293b',
+          },
+          keyframes: {
+            popIn: {
+              '0%': { transform: 'scale(0.85)', opacity: '0' },
+              '70%': { transform: 'scale(1.06)', opacity: '1' },
+              '100%': { transform: 'scale(1)', opacity: '1' },
+            },
+            pulseSoft: {
+              '0%, 100%': { opacity: '1' },
+              '50%': { opacity: '0.78' },
+            },
+          },
+          animation: {
+            popIn: 'popIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            pulseSoft: 'pulseSoft 1.8s ease-in-out infinite',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    /* Perustyylit ja kosketusoptimointi */
+    html, body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: #f1f5f9;
+      color: #0f172a;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    /* Peliruudukon ulkokehys */
+    .tectonic-grid-wrapper {
+      border: 3px solid #1e293b;
+      border-radius: 0.75rem;
+      overflow: hidden;
+      background-color: #1e293b;
+      box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.14), 0 4px 10px -3px rgba(15, 23, 42, 0.08);
+    }
+
+    /* Yksittäinen ruutu */
+    .tectonic-cell {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background-color 0.12s ease, transform 0.08s ease;
+      box-sizing: border-box;
+    }
+
+    .tectonic-cell:active {
+      transform: scale(0.97);
+    }
+
+    /* Ruudun valintakehys */
+    .cell-selected::after {
+      content: '';
+      position: absolute;
+      inset: 2px;
+      border: 2.5px solid #2563eb;
+      border-radius: 5px;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    /* Saman alueen korostus (hienovarainen reunus/hohde) */
+    .cell-same-region::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-color: rgba(37, 99, 235, 0.07);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* Saman numeron korostus */
+    .cell-same-number {
+      background-image: linear-gradient(to bottom right, rgba(59, 130, 246, 0.24), rgba(37, 99, 235, 0.28)) !important;
+    }
+
+    /* Virheellisen ruudun korostus */
+    .cell-conflict {
+      background-color: #fecdd3 !important;
+      background-image: none !important;
+    }
+
+    /* Valitun ruudun taustasävy */
+    .cell-selected-bg {
+      background-image: linear-gradient(to bottom right, rgba(59, 130, 246, 0.22), rgba(37, 99, 235, 0.26)) !important;
+    }
+
+    /* Kynämerkintöjen 3x2 miniruudukko */
+    .notes-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      width: 86%;
+      height: 82%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .note-item {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      line-height: 1;
+      color: #475569;
+    }
+
+    /* Konfettikangas voittotilanteessa */
+    #confetti-canvas {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 60;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between bg-slate-100 text-slate-900">
+
+  <!-- Konfettikangas -->
+  <canvas id="confetti-canvas"></canvas>
+
+  <!-- Yläpalkki (Header) -->
+  <header class="w-full bg-white border-b border-slate-200/90 shadow-sm sticky top-0 z-30">
+    <div class="max-w-5xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2.5">
+      
+      <!-- Otsikko ja logo -->
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
+          <!-- Geometrinen Tectonic-ikoni -->
+          <svg class="w-5 h-5 sm:w-6 sm:h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <rect x="3" y="3" width="18" height="18" rx="3" />
+            <path d="M3 12h9v9" />
+            <path d="M12 3v9h9" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 leading-none">Tectonic</h1>
+          <p class="text-[11px] sm:text-xs text-slate-500 font-medium mt-0.5 hidden sm:block">Logiikkapulma</p>
+        </div>
+      </div>
+
+      <!-- Vaikeustason valitsin -->
+      <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 order-3 sm:order-2 w-full sm:w-auto justify-center" role="group" aria-label="Vaikeustaso">
+        <button data-diff="easy" class="diff-btn flex-1 sm:flex-initial px-3 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all">
+          Helppo
+        </button>
+        <button data-diff="medium" class="diff-btn flex-1 sm:flex-initial px-3 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all">
+          Keskitaso
+        </button>
+        <button data-diff="hard" class="diff-btn flex-1 sm:flex-initial px-3 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all">
+          Vaikea
+        </button>
+      </div>
+
+      <!-- Ajastin, Säännöt, Äänet ja Uusi peli -->
+      <div class="flex items-center gap-1.5 sm:gap-2 order-2 sm:order-3">
+        <!-- Ajastin -->
+        <div class="flex items-center gap-1.5 bg-slate-100 border border-slate-200/80 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold text-slate-700 tabular-nums" title="Kulunut aika">
+          <svg class="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="9" />
+            <path stroke-linecap="round" d="M12 7v5l3 2" />
+          </svg>
+          <span id="timer-display">00:00</span>
+        </div>
+
+        <!-- Äänipainike -->
+        <button id="btn-sound" type="button" class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200/80 transition-colors" title="Äänitehosteet päälle/pois" aria-label="Äänitehosteet">
+          <svg id="icon-sound-on" class="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" />
+          </svg>
+          <svg id="icon-sound-off" class="w-4 h-4 sm:w-5 sm:h-5 hidden text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6" />
+          </svg>
+        </button>
+
+        <!-- Säännöt-painike -->
+        <button id="btn-rules" type="button" class="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200/80 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-colors">
+          <svg class="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+            <circle cx="12" cy="12" r="9" />
+            <path stroke-linecap="round" d="M12 11v5M12 8h.01" />
+          </svg>
+          <span>Säännöt</span>
+        </button>
+
+        <!-- Uusi peli -painike -->
+        <button id="btn-new-game" type="button" class="px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white text-xs sm:text-sm font-semibold shadow-sm flex items-center gap-1.5 transition-all">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M5.64 18.36A9 9 0 0019.07 6.93M18.36 5.64A9 9 0 004.93 17.07" />
+          </svg>
+          <span>Uusi peli</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Pääpelialue -->
+  <main class="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-6 py-3 sm:py-6 flex flex-col lg:flex-row items-center lg:items-start justify-center gap-4 sm:gap-7">
+    
+    <!-- Vasen / Keski: Pelilauta -->
+    <section class="w-full flex flex-col items-center justify-center lg:w-auto">
+      <!-- Yläpuolinen tilapalkki (Valitun alueen tiedot & Virheiden näyttö) -->
+      <div class="w-full max-w-[440px] flex items-center justify-between mb-2.5 px-1">
+        <div id="region-info-badge" class="text-xs sm:text-sm font-medium text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200/90 shadow-xs flex items-center gap-2">
+          <span id="region-color-dot" class="w-3 h-3 rounded-full border border-slate-400/50 inline-block bg-amber-100"></span>
+          <span id="region-info-text">Alue: 1–5</span>
+        </div>
+
+        <!-- Näytä virheet -kytkin -->
+        <label class="inline-flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-slate-200/90 shadow-xs">
+          <input type="checkbox" id="toggle-errors" class="sr-only peer" checked />
+          <div class="relative w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-500"></div>
+          <span class="text-xs sm:text-sm font-semibold text-slate-700">Näytä virheet</span>
+        </label>
+      </div>
+
+      <!-- Varsinainen Tectonic-peliruudukko -->
+      <div id="board-container" class="w-full max-w-[440px] flex items-center justify-center">
+        <div id="tectonic-grid" class="tectonic-grid-wrapper w-full grid" role="grid" aria-label="Tectonic-peliruudukko">
+          <!-- Ruudut luodaan dynaamisesti JavaScriptillä -->
+        </div>
+      </div>
+
+      <!-- Tilaviesti / Ilmoituspalkki -->
+      <div id="status-toast" class="h-6 mt-2 flex items-center justify-center text-xs sm:text-sm font-medium text-slate-500 transition-opacity">
+        Valitse ruutu ja syötä numero
+      </div>
+    </section>
+
+    <!-- Oikea / Alaosa: Ohjaimet ja Numeronäppäimistö -->
+    <aside class="w-full max-w-[440px] lg:w-80 flex flex-col gap-3 sm:gap-4 bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-sm">
+      
+      <!-- Toimintopainikkeet: Muistiinpanot, Kumoa, Tyhjennä, Vihje -->
+      <div class="grid grid-cols-4 gap-2">
+        <!-- Muistiinpanot -->
+        <button id="btn-notes" type="button" class="relative flex flex-col items-center justify-center gap-1 py-2.5 px-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold transition-all">
+          <span id="notes-badge" class="absolute top-1.5 right-1.5 text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-slate-200 text-slate-600">N</span>
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+          <span class="text-[11px] sm:text-xs leading-tight">Muistiinpanot</span>
+        </button>
+
+        <!-- Kumoa -->
+        <button id="btn-undo" type="button" class="flex flex-col items-center justify-center gap-1 py-2.5 px-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none text-slate-700 font-semibold transition-all">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+          </svg>
+          <span class="text-[11px] sm:text-xs leading-tight">Kumoa</span>
+        </button>
+
+        <!-- Tyhjennä -->
+        <button id="btn-erase" type="button" class="flex flex-col items-center justify-center gap-1 py-2.5 px-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold transition-all">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          <span class="text-[11px] sm:text-xs leading-tight">Tyhjennä</span>
+        </button>
+
+        <!-- Vihje -->
+        <button id="btn-hint" type="button" class="flex flex-col items-center justify-center gap-1 py-2.5 px-1.5 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100/80 text-amber-800 font-semibold transition-all">
+          <svg class="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
+          <span class="text-[11px] sm:text-xs leading-tight">Vihje</span>
+        </button>
+      </div>
+
+      <!-- Numeronäppäimistö 1–5 -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Valitse numero</span>
+          <span id="mode-indicator" class="text-xs font-semibold text-blue-600">Normaalitila</span>
+        </div>
+        <div id="numpad" class="grid grid-cols-5 gap-2">
+          <button data-num="1" type="button" class="num-btn h-13 sm:h-14 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-400 active:scale-95 text-xl sm:text-2xl font-bold text-slate-800 shadow-xs transition-all">1</button>
+          <button data-num="2" type="button" class="num-btn h-13 sm:h-14 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-400 active:scale-95 text-xl sm:text-2xl font-bold text-slate-800 shadow-xs transition-all">2</button>
+          <button data-num="3" type="button" class="num-btn h-13 sm:h-14 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-400 active:scale-95 text-xl sm:text-2xl font-bold text-slate-800 shadow-xs transition-all">3</button>
+          <button data-num="4" type="button" class="num-btn h-13 sm:h-14 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-400 active:scale-95 text-xl sm:text-2xl font-bold text-slate-800 shadow-xs transition-all">4</button>
+          <button data-num="5" type="button" class="num-btn h-13 sm:h-14 py-2.5 rounded-xl border-2 border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-400 active:scale-95 text-xl sm:text-2xl font-bold text-slate-800 shadow-xs transition-all">5</button>
+        </div>
+      </div>
+
+      <!-- Tiivis muistilista säännöistä ja pikanäppäimistä (näkyy erityisesti isommilla näytöillä) -->
+      <div class="hidden lg:flex flex-col gap-2.5 pt-3 border-t border-slate-100 text-xs text-slate-600">
+        <div class="font-semibold text-slate-800 flex items-center gap-1.5">
+          <svg class="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>Pikamuistutus säännöistä</span>
+        </div>
+        <ul class="space-y-1.5 leading-relaxed text-slate-500">
+          <li>• Jokainen <strong class="text-slate-700">N</strong> ruudun alue sisältää numerot <strong class="text-slate-700">1–N</strong> kerran.</li>
+          <li>• Sama numero ei saa koskettaa toista edes <strong class="text-slate-700">kulmittain</strong>.</li>
+        </ul>
+        <div class="pt-2 border-t border-slate-100 flex flex-wrap gap-1.5 text-[11px] text-slate-500">
+          <span class="px-2 py-0.5 bg-slate-100 rounded border border-slate-200 font-medium">Nuolet / WASD</span>
+          <span class="px-2 py-0.5 bg-slate-100 rounded border border-slate-200 font-medium">1–5</span>
+          <span class="px-2 py-0.5 bg-slate-100 rounded border border-slate-200 font-medium">N = Muistiinpanot</span>
+          <span class="px-2 py-0.5 bg-slate-100 rounded border border-slate-200 font-medium">Ctrl+Z = Kumoa</span>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Säännöt-modaali -->
+  <div id="rules-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/55 backdrop-blur-xs p-4" role="dialog" aria-modal="true" aria-labelledby="rules-modal-title">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-popIn">
+      <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+        <h2 id="rules-modal-title" class="text-lg font-bold text-slate-900 flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center text-sm font-extrabold">?</span>
+          <span>Tectonic – Pelin säännöt</span>
+        </h2>
+        <button id="btn-close-rules" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition-colors" aria-label="Sulje säännöt">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="p-5 sm:p-6 space-y-4 text-sm sm:text-base text-slate-700 leading-relaxed max-h-[80vh] overflow-y-auto">
+        <div class="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200/80">
+          <h3 class="font-bold text-slate-900 mb-1">1. Alueiden numerointi</h3>
+          <p class="text-sm text-slate-700">
+            Täytä ruudukko numeroilla niin, että jokainen paksulla viivalla rajattu alue sisältää numerot <strong>1:stä alueen ruutujen määrään</strong> (esim. 4 ruudun alueella on numerot 1, 2, 3 ja 4).
+          </p>
+        </div>
+
+        <div class="p-3.5 rounded-xl bg-sky-50/80 border border-sky-200/80">
+          <h3 class="font-bold text-slate-900 mb-1">2. Kosketuskielto (myös viistosti)</h3>
+          <p class="text-sm text-slate-700">
+            Sama numero ei saa koskettaa toista samanlaista numeroa missään suunnassa – ei vaaka-, pysty- eikä viistosuunnassa (edes kulmittain).
+          </p>
+        </div>
+
+        <!-- Havainnollistava miniesimerkki -->
+        <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-4">
+          <div class="grid grid-cols-3 w-24 h-24 shrink-0 border-2 border-slate-800 rounded-lg overflow-hidden text-xs font-bold">
+            <div class="bg-rose-100 border border-slate-300 flex items-center justify-center text-rose-600">×</div>
+            <div class="bg-rose-100 border border-slate-300 flex items-center justify-center text-rose-600">×</div>
+            <div class="bg-rose-100 border border-slate-300 flex items-center justify-center text-rose-600">×</div>
+            <div class="bg-rose-100 border border-slate-300 flex items-center justify-center text-rose-600">×</div>
+            <div class="bg-blue-600 text-white border border-slate-300 flex items-center justify-center text-sm">3</div>
+            <div class="bg-rose-100 border border-slate-300 flex items-center justify-center text-rose-600">×</div>
+            <div class="bg-rose-100 border border-slate-300 flex items-center justify-center text-rose-600">×</div>
+            <div class="bg-rose-100 border border-slate-300 flex items-center justify-center text-rose-600">×</div>
+            <div class="bg-rose-100 border border-slate-300 flex items-center justify-center text-rose-600">×</div>
+          </div>
+          <p class="text-xs sm:text-sm text-slate-600">
+            Keskellä oleva numero <strong>3</strong> estää kaikkia 8 ympäröivää ruutua (<span class="text-rose-600 font-bold">×</span>) olemasta numero 3, vaikka ne kuuluisivat eri alueisiin!
+          </p>
+        </div>
+
+        <div class="text-xs text-slate-500 pt-1">
+          <strong>Vinkki:</strong> Käytä <em>Muistiinpanot</em>-tilaa (pikanäppäin <strong>N</strong>) merkitäksesi ruudun mahdolliset ehdokasnumerot.
+        </div>
+      </div>
+
+      <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex justify-end">
+        <button id="btn-rules-ok" type="button" class="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm transition-colors">
+          Selvä, pelataan!
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Voittomodaali -->
+  <div id="win-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/55 backdrop-blur-xs p-4" role="dialog" aria-modal="true" aria-labelledby="win-modal-title">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden text-center animate-popIn">
+      <div class="p-6 sm:p-7 space-y-4">
+        <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center shadow-inner">
+          <svg class="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+
+        <div>
+          <h2 id="win-modal-title" class="text-xl sm:text-2xl font-extrabold text-slate-900">
+            Onneksi olkoon! Ratkaisit pelin!
+          </h2>
+          <p class="text-sm text-slate-500 mt-1">Hienoa loogista päättelyä!</p>
+        </div>
+
+        <!-- Tilastoruudut -->
+        <div class="grid grid-cols-3 gap-2.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Vaikeustaso</div>
+            <div id="win-stat-diff" class="text-sm sm:text-base font-bold text-slate-800 mt-0.5">Helppo</div>
+          </div>
+          <div class="border-x border-slate-200">
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Aika</div>
+            <div id="win-stat-time" class="text-sm sm:text-base font-bold text-blue-600 tabular-nums mt-0.5">00:00</div>
+          </div>
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Vihjeet</div>
+            <div id="win-stat-hints" class="text-sm sm:text-base font-bold text-slate-800 mt-0.5">0</div>
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-2.5 pt-2">
+          <button id="btn-win-close" type="button" class="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-sm transition-colors">
+            Tarkastele lautaa
+          </button>
+          <button id="btn-play-again" type="button" class="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-sm transition-colors">
+            Pelaa uudelleen
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * =========================================================================
+     * TECTONIC (SUGURU) - LOGIIKKAPELIN TOTEUTUS
+     * =========================================================================
+     * Sisältää:
+     * 1. Proseduraalisen aluegeneraattorin (polyominot 1–5 ruutua + graafiväritys)
+     * 2. Nopean MRV + bittimaski-peruutusratkaisijan (Backtracking Solver)
+     * 3. Yksikäsitteisen ratkaisun varmistavan vihjeiden karsijan
+     * 4. Täydellisen käyttöliittymälogiikan, muistiinpanot, kumoamisen ja äänet
+     */
+
+    // Vaikeustasojen asetukset
+    const DIFFICULTIES = {
+      easy: {
+        id: 'easy',
+        label: 'Helppo',
+        rows: 5,
+        cols: 5,
+        clueRatio: 0.45, // ~11 vihjettä 25 ruudusta
+      },
+      medium: {
+        id: 'medium',
+        label: 'Keskitaso',
+        rows: 7,
+        cols: 7,
+        clueRatio: 0.32, // ~16 vihjettä 49 ruudusta
+      },
+      hard: {
+        id: 'hard',
+        label: 'Vaikea',
+        rows: 9,
+        cols: 8,
+        clueRatio: 0.21, // ~15–18 vihjettä 72 ruudusta
+      },
+    };
+
+    // Harmoniset pastellisävyt alueiden erottamiseen (vierekkäisillä alueilla aina eri sävy)
+    const REGION_PALETTE = [
+      { bg: '#fef9c3', dot: '#fde047' }, // Lämmin keltainen / kerma
+      { bg: '#e0f2fe', dot: '#7dd3fc' }, // Pehmeä taivaansininen
+      { bg: '#dcfce7', dot: '#86efac' }, // Raikas mintunvihreä
+      { bg: '#ffe4e6', dot: '#fda4af' }, // Pehmeä roosa
+      { bg: '#ede9fe', dot: '#c4b5fd' }, // Hento laventeli
+      { bg: '#ffedd5', dot: '#fdba74' }, // Lämmin persikka
+    ];
+
+    // Pelin tila
+    const state = {
+      difficulty: 'easy',
+      rows: 5,
+      cols: 5,
+      regions: [],        // Array<Array<number>> - jokaisen alueen ruutuindeksit
+      regionId: [],       // Int32Array - ruudun alue-ID
+      regionColors: [],   // Array<number> - väri-indeksi per alue
+      clues: [],          // Int8Array - alkuperäiset lukitut numerot (0 = tyhjä)
+      solution: [],       // Int8Array - oikea ratkaisu
+      board: [],          // Int8Array - pelaajan nykyinen ruudukko
+      notes: [],          // Array<Set<number>> - kynämerkinnät per ruutu
+      selectedIndex: 0,   // Valitun ruudun indeksi
+      notesMode: false,   // Muistiinpanotila päällä/pois
+      showErrors: true,   // Näytä virheet -kytkin
+      history: [],        // Kumoa-pino
+      hintsUsed: 0,       // Käytettyjen vihjeiden määrä
+      elapsedSeconds: 0,  // Kulunut aika sekunteina
+      timerInterval: null,
+      isPaused: false,
+      isWon: false,
+      soundEnabled: true,
+    };
+
+    // =========================================================================
+    // ÄÄNITEHOSTEET (Web Audio API - ei ulkoisia tiedostoja)
+    // =========================================================================
+    const SoundFX = (() => {
+      let ctx = null;
+
+      function ensureContext() {
+        if (!ctx && (window.AudioContext || window.webkitAudioContext)) {
+          ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume();
+        }
+      }
+
+      function playTone(freq, duration, type = 'sine', volume = 0.08, delay = 0) {
+        if (!state.soundEnabled) return;
+        try {
+          ensureContext();
+          if (!ctx) return;
+          const now = ctx.currentTime + delay;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, now);
+          gain.gain.setValueAtTime(volume, now);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + duration);
+        } catch (e) {
+          // Ohitetaan ääni, jos selain estää sen
+        }
+      }
+
+      return {
+        select: () => playTone(520, 0.045, 'sine', 0.03),
+        place: () => playTone(660, 0.08, 'triangle', 0.07),
+        note: () => playTone(880, 0.05, 'sine', 0.04),
+        erase: () => playTone(320, 0.07, 'sine', 0.05),
+        hint: () => {
+          playTone(587.33, 0.1, 'triangle', 0.07, 0);
+          playTone(880, 0.16, 'triangle', 0.07, 0.07);
+        },
+        win: () => {
+          playTone(523.25, 0.14, 'triangle', 0.09, 0);
+          playTone(659.25, 0.14, 'triangle', 0.09, 0.1);
+          playTone(783.99, 0.14, 'triangle', 0.09, 0.2);
+          playTone(1046.5, 0.32, 'triangle', 0.1, 0.3);
+        },
+      };
+    })();
+
+    // =========================================================================
+    // APUFUNKTIOT RUUDUKOLLE JA SATUNNAISTAMISELLE
+    // =========================================================================
+    function shuffleArray(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function getOrthogonalNeighbors(idx, rows, cols) {
+      const r = Math.floor(idx / cols);
+      const c = idx % cols;
+      const res = [];
+      if (r > 0) res.push(idx - cols);
+      if (r < rows - 1) res.push(idx + cols);
+      if (c > 0) res.push(idx - 1);
+      if (c < cols - 1) res.push(idx + 1);
+      return res;
+    }
+
+    function buildMooreNeighborsTable(rows, cols) {
+      const total = rows * cols;
+      const table = new Array(total);
+      for (let i = 0; i < total; i++) {
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        const list = [];
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            const nr = r + dr;
+            const nc = c + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+              list.push(nr * cols + nc);
+            }
+          }
+        }
+        table[i] = list;
+      }
+      return table;
+    }
+
+    // =========================================================================
+    // VAIHE A: RUUDUKON JAKO ALUEISIIN (1–5 RUUDUN POLYOMINOT)
+    // =========================================================================
+    function generateRegions(rows, cols) {
+      const total = rows * cols;
+      const orthoTable = Array.from({ length: total }, (_, i) => getOrthogonalNeighbors(i, rows, cols));
+
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const regionId = new Int32Array(total).fill(-1);
+        const regions = [];
+        let unassignedCount = total;
+
+        while (unassignedCount > 0) {
+          // Valitaan aloitussoluksi vapaa ruutu, jolla on vähiten vapaita naapureita (estää eristyneet 1 ruudun kolot)
+          let minFreeDeg = 99;
+          let candidates = [];
+          for (let i = 0; i < total; i++) {
+            if (regionId[i] !== -1) continue;
+            let freeDeg = 0;
+            for (const nb of orthoTable[i]) {
+              if (regionId[nb] === -1) freeDeg++;
+            }
+            if (freeDeg < minFreeDeg) {
+              minFreeDeg = freeDeg;
+              candidates = [i];
+            } else if (freeDeg === minFreeDeg) {
+              candidates.push(i);
+            }
+          }
+
+          const seed = candidates[Math.floor(Math.random() * candidates.length)];
+
+          // Suositaan kokoja 4 ja 5, joskus 3
+          const rand = Math.random();
+          let targetSize = 5;
+          if (rand < 0.45) targetSize = 5;
+          else if (rand < 0.85) targetSize = 4;
+          else if (rand < 0.97) targetSize = 3;
+          else targetSize = 2;
+
+          const id = regions.length;
+          const cells = [seed];
+          regionId[seed] = id;
+          unassignedCount--;
+
+          while (cells.length < targetSize) {
+            // Kerätään alueen reunan vapaat ruudut
+            const frontierSet = new Set();
+            for (const cell of cells) {
+              for (const nb of orthoTable[cell]) {
+                if (regionId[nb] === -1) {
+                  frontierSet.add(nb);
+                }
+              }
+            }
+            if (frontierSet.size === 0) break;
+
+            // Suositaan reunaruutuja, joilla on vähiten vapaita naapureita
+            const frontier = Array.from(frontierSet);
+            frontier.sort((a, b) => {
+              let degA = 0, degB = 0;
+              for (const nb of orthoTable[a]) if (regionId[nb] === -1) degA++;
+              for (const nb of orthoTable[b]) if (regionId[nb] === -1) degB++;
+              return degA - degB + (Math.random() - 0.5) * 1.4;
+            });
+
+            const nextCell = frontier[0];
+            cells.push(nextCell);
+            regionId[nextCell] = id;
+            unassignedCount--;
+          }
+
+          regions.push(cells);
+        }
+
+        // Yhdistetään mahdolliset yksittäiset 1 ruudun alueet naapurialueisiin, joiden koko < 5
+        let merged = true;
+        while (merged) {
+          merged = false;
+          for (let rId = 0; rId < regions.length; rId++) {
+            if (regions[rId].length !== 1) continue;
+            const cell = regions[rId][0];
+            let bestNeighborRegion = -1;
+            let smallestSize = 6;
+
+            for (const nb of orthoTable[cell]) {
+              const nbReg = regionId[nb];
+              if (nbReg !== rId && regions[nbReg].length < smallestSize && regions[nbReg].length < 5) {
+                smallestSize = regions[nbReg].length;
+                bestNeighborRegion = nbReg;
+              }
+            }
+
+            if (bestNeighborRegion !== -1) {
+              regions[bestNeighborRegion].push(cell);
+              regionId[cell] = bestNeighborRegion;
+              regions[rId] = [];
+              merged = true;
+            }
+          }
+        }
+
+        // Tiivistetään alueindeksit poistaen tyhjiksi jääneet
+        const compactRegions = [];
+        const compactRegionId = new Int32Array(total);
+        for (const reg of regions) {
+          if (reg.length > 0) {
+            const newId = compactRegions.length;
+            compactRegions.push(reg);
+            for (const c of reg) {
+              compactRegionId[c] = newId;
+            }
+          }
+        }
+
+        // Tarkistetaan jäikö yhtään eristynyttä 1 ruudun aluetta; jos ei, hyväksytään jako heti
+        const hasSingleton = compactRegions.some((r) => r.length === 1);
+        if (!hasSingleton || attempt === 29) {
+          return { regions: compactRegions, regionId: compactRegionId };
+        }
+      }
+    }
+
+    // Graafiväritys: varmistaa ettei kahdella vierekkäisellä alueella ole samaa pastellisävyä
+    function colorRegions(rows, cols, regionId, numRegions) {
+      const adj = Array.from({ length: numRegions }, () => new Set());
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const idx = r * cols + c;
+          const regA = regionId[idx];
+          if (r + 1 < rows) {
+            const regB = regionId[idx + cols];
+            if (regA !== regB) {
+              adj[regA].add(regB);
+              adj[regB].add(regA);
+            }
+          }
+          if (c + 1 < cols) {
+            const regB = regionId[idx + 1];
+            if (regA !== regB) {
+              adj[regA].add(regB);
+              adj[regB].add(regA);
+            }
+          }
+        }
+      }
+
+      // Järjestetään alueet naapureiden määrän mukaan (Welsh–Powell)
+      const order = Array.from({ length: numRegions }, (_, i) => i).sort(
+        (a, b) => adj[b].size - adj[a].size
+      );
+      const colors = new Array(numRegions).fill(-1);
+
+      for (const reg of order) {
+        const usedColors = new Set();
+        for (const nb of adj[reg]) {
+          if (colors[nb] !== -1) usedColors.add(colors[nb]);
+        }
+        let color = 0;
+        while (usedColors.has(color)) color++;
+        colors[reg] = color % REGION_PALETTE.length;
+      }
+
+      return colors;
+    }
+
+    // =========================================================================
+    // VAIHE B: NOPEA BACKTRACKING-RATKAISIJA (MRV + BITTIMASKIT)
+    // =========================================================================
+    function popcount5(mask) {
+      let count = 0;
+      let m = mask;
+      while (m) {
+        count += m & 1;
+        m >>= 1;
+      }
+      return count;
+    }
+
+    function solveTectonic(rows, cols, regionId, regions, initialGrid, maxSolutions = 1, randomize = false) {
+      const total = rows * cols;
+      const mooreTable = buildMooreNeighborsTable(rows, cols);
+      const regionSizes = regions.map((r) => r.length);
+      const regionUsedMask = new Uint8Array(regions.length);
+      const grid = new Int8Array(initialGrid);
+
+      // Alustetaan bittimaskit ja tarkistetaan alkutilan ristiriidattomuus
+      const emptyCells = [];
+      for (let i = 0; i < total; i++) {
+        const val = grid[i];
+        const reg = regionId[i];
+        if (val !== 0) {
+          if (val < 1 || val > regionSizes[reg]) {
+            return { count: 0, solution: null };
+          }
+          const bit = 1 << (val - 1);
+          if (regionUsedMask[reg] & bit) {
+            return { count: 0, solution: null };
+          }
+          regionUsedMask[reg] |= bit;
+
+          for (const nb of mooreTable[i]) {
+            if (grid[nb] === val) {
+              return { count: 0, solution: null };
+            }
+          }
+        } else {
+          emptyCells.push(i);
+        }
+      }
+
+      let solutionsFound = 0;
+      let capturedSolution = null;
+
+      function backtrack(remaining) {
+        if (remaining === 0) {
+          solutionsFound++;
+          if (solutionsFound === 1) {
+            capturedSolution = new Int8Array(grid);
+          }
+          return solutionsFound >= maxSolutions;
+        }
+
+        // MRV-heuristiikka: etsitään tyhjä ruutu, jolla on vähiten laillisia ehdokkaita
+        let bestCell = -1;
+        let bestMask = 0;
+        let minCandidates = 10;
+
+        for (let k = 0; k < emptyCells.length; k++) {
+          const idx = emptyCells[k];
+          if (grid[idx] !== 0) continue;
+
+          const reg = regionId[idx];
+          const maxNum = regionSizes[reg];
+          let validMask = ((1 << maxNum) - 1) & ~regionUsedMask[reg];
+
+          const nbs = mooreTable[idx];
+          for (let j = 0; j < nbs.length; j++) {
+            const nbVal = grid[nbs[j]];
+            if (nbVal !== 0) {
+              validMask &= ~(1 << (nbVal - 1));
+            }
+          }
+
+          if (validMask === 0) {
+            return false; // Umpikuja -> peruutetaan heti
+          }
+
+          const count = popcount5(validMask);
+          if (count < minCandidates) {
+            minCandidates = count;
+            bestCell = idx;
+            bestMask = validMask;
+            if (count === 1) break; // Pakotettu siirto -> valitaan välittömästi
+          }
+        }
+
+        const reg = regionId[bestCell];
+        const maxNum = regionSizes[reg];
+        const digits = [];
+        for (let d = 1; d <= maxNum; d++) {
+          if (bestMask & (1 << (d - 1))) {
+            digits.push(d);
+          }
+        }
+        if (randomize && digits.length > 1) {
+          shuffleArray(digits);
+        }
+
+        for (let i = 0; i < digits.length; i++) {
+          const d = digits[i];
+          const bit = 1 << (d - 1);
+          grid[bestCell] = d;
+          regionUsedMask[reg] |= bit;
+
+          if (backtrack(remaining - 1)) {
+            return true;
+          }
+
+          regionUsedMask[reg] &= ~bit;
+          grid[bestCell] = 0;
+        }
+
+        return false;
+      }
+
+      backtrack(emptyCells.length);
+      return { count: solutionsFound, solution: capturedSolution };
+    }
+
+    // =========================================================================
+    // VAIHE C: PULMAGENERAATTORI YKSIKÄSITTEISYYDEN TARKISTUKSELLA
+    // =========================================================================
+    function createPuzzle(diffKey) {
+      const config = DIFFICULTIES[diffKey];
+      const { rows, cols, clueRatio } = config;
+      const total = rows * cols;
+
+      let regions, regionId, solution;
+
+      // 1. Etsitään kelvollinen aluejako ja täydellinen ratkaisu
+      while (true) {
+        const part = generateRegions(rows, cols);
+        regions = part.regions;
+        regionId = part.regionId;
+        const empty = new Int8Array(total);
+        const res = solveTectonic(rows, cols, regionId, regions, empty, 1, true);
+        if (res.count === 1 && res.solution) {
+          solution = res.solution;
+          break;
+        }
+      }
+
+      // 2. Poistetaan vihjeitä yksi kerrallaan varmistaen yksikäsitteinen ratkaisu
+      const clues = new Int8Array(solution);
+      const indices = shuffleArray(Array.from({ length: total }, (_, i) => i));
+      const targetClues = Math.max(regions.length, Math.round(total * clueRatio));
+      let currentClues = total;
+
+      for (const idx of indices) {
+        if (currentClues <= targetClues) break;
+        const backup = clues[idx];
+        clues[idx] = 0;
+
+        const check = solveTectonic(rows, cols, regionId, regions, clues, 2, false);
+        if (check.count === 1) {
+          currentClues--;
+        } else {
+          clues[idx] = backup;
+        }
+      }
+
+      const regionColors = colorRegions(rows, cols, regionId, regions.length);
+
+      return {
+        rows,
+        cols,
+        regions,
+        regionId,
+        regionColors,
+        clues,
+        solution,
+      };
+    }
+
+    // =========================================================================
+    // PELIN LOGIIKKA JA VIRHEIDEN TARKISTUS
+    // =========================================================================
+    function findConflicts() {
+      const total = state.rows * state.cols;
+      const conflicts = new Set();
+      const mooreTable = buildMooreNeighborsTable(state.rows, state.cols);
+
+      // 1. Tarkistetaan alueen sisäiset tuplat ja liian suuret numerot
+      for (let rId = 0; rId < state.regions.length; rId++) {
+        const regCells = state.regions[rId];
+        const maxNum = regCells.length;
+        const seen = new Map();
+
+        for (const idx of regCells) {
+          const val = state.board[idx];
+          if (val === 0) continue;
+          if (val > maxNum) {
+            conflicts.add(idx);
+          }
+          if (seen.has(val)) {
+            conflicts.add(idx);
+            conflicts.add(seen.get(val));
+          } else {
+            seen.set(val, idx);
+          }
+        }
+      }
+
+      // 2. Tarkistetaan 8-naapuruston (vaaka, pysty, viisto) kosketuskielto
+      for (let i = 0; i < total; i++) {
+        const val = state.board[i];
+        if (val === 0) continue;
+        for (const nb of mooreTable[i]) {
+          if (state.board[nb] === val) {
+            conflicts.add(i);
+            conflicts.add(nb);
+          }
+        }
+      }
+
+      return conflicts;
+    }
+
+    function checkWinCondition() {
+      if (state.isWon) return;
+      const total = state.rows * state.cols;
+      for (let i = 0; i < total; i++) {
+        if (state.board[i] === 0) return;
+      }
+      const conflicts = findConflicts();
+      if (conflicts.size === 0) {
+        state.isWon = true;
+        stopTimer();
+        SoundFX.win();
+        showWinModal();
+        launchConfetti();
+      }
+    }
+
+    // Tallentaa muutoksen kumoa-pinoon
+    function pushHistory(changes) {
+      if (changes.length === 0) return;
+      state.history.push(changes);
+      if (state.history.length > 200) {
+        state.history.shift();
+      }
+      updateUndoButton();
+    }
+
+    function undoLastAction() {
+      if (state.isWon || state.history.length === 0) return;
+      const changes = state.history.pop();
+      for (const ch of changes) {
+        state.board[ch.idx] = ch.prevVal;
+        state.notes[ch.idx] = new Set(ch.prevNotes);
+      }
+      SoundFX.erase();
+      updateUndoButton();
+      renderBoard();
+      showStatus('Viimeisin siirto kumottu.');
+    }
+
+    // Syöttää numeron tai muistiinpanon valittuun ruutuun
+    function handleNumberInput(num, forceNote = false) {
+      if (state.isWon) return;
+      const idx = state.selectedIndex;
+      if (idx < 0 || idx >= state.rows * state.cols) return;
+
+      // Lukittuja vihjeruutuja ei voi muokata
+      if (state.clues[idx] !== 0) {
+        showStatus('Alkuperäistä vihjeruutua ei voi muuttaa.');
+        return;
+      }
+
+      const regSize = state.regions[state.regionId[idx]].length;
+      if (num > regSize) {
+        showStatus(`Tämän alueen suurin sallittu numero on ${regSize}.`);
+        return;
+      }
+
+      const isNote = forceNote || state.notesMode;
+      const changes = [];
+
+      if (isNote) {
+        // Kynämerkintätila
+        const prevVal = state.board[idx];
+        const prevNotes = new Set(state.notes[idx]);
+        const nextNotes = new Set(prevNotes);
+
+        if (nextNotes.has(num)) {
+          nextNotes.delete(num);
+        } else {
+          nextNotes.add(num);
+        }
+
+        changes.push({ idx, prevVal, prevNotes });
+        state.board[idx] = 0;
+        state.notes[idx] = nextNotes;
+        SoundFX.note();
+      } else {
+        // Normaalitila: asetetaan tai poistetaan (jos painetaan samaa numeroa uudelleen)
+        const prevVal = state.board[idx];
+        const prevNotes = new Set(state.notes[idx]);
+        const nextVal = prevVal === num ? 0 : num;
+
+        changes.push({ idx, prevVal, prevNotes });
+        state.board[idx] = nextVal;
+        state.notes[idx] = new Set();
+
+        // Siivotaan syötetty numero automaattisesti saman alueen ja 8 naapurin muistiinpanoista
+        if (nextVal !== 0) {
+          const affected = new Set([
+            ...state.regions[state.regionId[idx]],
+            ...buildMooreNeighborsTable(state.rows, state.cols)[idx],
+          ]);
+          for (const targetIdx of affected) {
+            if (targetIdx !== idx && state.notes[targetIdx].has(nextVal)) {
+              changes.push({
+                idx: targetIdx,
+                prevVal: state.board[targetIdx],
+                prevNotes: new Set(state.notes[targetIdx]),
+              });
+              state.notes[targetIdx].delete(nextVal);
+            }
+          }
+          SoundFX.place();
+        } else {
+          SoundFX.erase();
+        }
+      }
+
+      pushHistory(changes);
+      renderBoard();
+      checkWinCondition();
+    }
+
+    function handleErase() {
+      if (state.isWon) return;
+      const idx = state.selectedIndex;
+      if (state.clues[idx] !== 0) {
+        showStatus('Alkuperäistä vihjeruutua ei voi tyhjentää.');
+        return;
+      }
+      if (state.board[idx] === 0 && state.notes[idx].size === 0) return;
+
+      pushHistory([
+        {
+          idx,
+          prevVal: state.board[idx],
+          prevNotes: new Set(state.notes[idx]),
+        },
+      ]);
+      state.board[idx] = 0;
+      state.notes[idx] = new Set();
+      SoundFX.erase();
+      renderBoard();
+    }
+
+    function handleHint() {
+      if (state.isWon) return;
+      const total = state.rows * state.cols;
+
+      // Suositaan valittua ruutua, jos se on tyhjä tai väärin
+      let targetIdx = -1;
+      const sel = state.selectedIndex;
+      if (state.clues[sel] === 0 && state.board[sel] !== state.solution[sel]) {
+        targetIdx = sel;
+      } else {
+        const candidates = [];
+        for (let i = 0; i < total; i++) {
+          if (state.clues[i] === 0 && state.board[i] !== state.solution[i]) {
+            candidates.push(i);
+          }
+        }
+        if (candidates.length > 0) {
+          targetIdx = candidates[Math.floor(Math.random() * candidates.length)];
+        }
+      }
+
+      if (targetIdx === -1) return;
+
+      const correctVal = state.solution[targetIdx];
+      const changes = [
+        {
+          idx: targetIdx,
+          prevVal: state.board[targetIdx],
+          prevNotes: new Set(state.notes[targetIdx]),
+        },
+      ];
+
+      state.selectedIndex = targetIdx;
+      state.board[targetIdx] = correctVal;
+      state.notes[targetIdx] = new Set();
+      state.hintsUsed++;
+
+      // Siivotaan muistiinpanot ympäriltä
+      const affected = new Set([
+        ...state.regions[state.regionId[targetIdx]],
+        ...buildMooreNeighborsTable(state.rows, state.cols)[targetIdx],
+      ]);
+      for (const adjIdx of affected) {
+        if (adjIdx !== targetIdx && state.notes[adjIdx].has(correctVal)) {
+          changes.push({
+            idx: adjIdx,
+            prevVal: state.board[adjIdx],
+            prevNotes: new Set(state.notes[adjIdx]),
+          });
+          state.notes[adjIdx].delete(correctVal);
+        }
+      }
+
+      pushHistory(changes);
+      SoundFX.hint();
+      showStatus(`Vihje lisätty: numero ${correctVal}.`);
+      renderBoard();
+      checkWinCondition();
+    }
+
+    // =========================================================================
+    // KÄYTTÖLIITTYMÄN PIIRTÄMINEN (RENDERÖINTI)
+    // =========================================================================
+    function renderBoard() {
+      const gridEl = document.getElementById('tectonic-grid');
+      const { rows, cols, regionId, regionColors, clues, board, notes, selectedIndex } = state;
+
+      gridEl.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+      gridEl.innerHTML = '';
+
+      const conflicts = state.showErrors ? findConflicts() : new Set();
+      const selectedRegion = regionId[selectedIndex];
+      const selectedValue = board[selectedIndex];
+
+      // Skaalataan fonttikoot ruudukon koon mukaan
+      const mainFontSize =
+        cols <= 5
+          ? 'clamp(1.35rem, 6vw, 1.95rem)'
+          : cols <= 7
+          ? 'clamp(1.1rem, 4.5vw, 1.55rem)'
+          : 'clamp(0.95rem, 3.8vw, 1.35rem)';
+
+      const noteFontSize =
+        cols <= 5
+          ? 'clamp(0.62rem, 2.2vw, 0.8rem)'
+          : cols <= 7
+          ? 'clamp(0.52rem, 1.8vw, 0.68rem)'
+          : 'clamp(0.46rem, 1.5vw, 0.6rem)';
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const idx = r * cols + c;
+          const reg = regionId[idx];
+          const colorObj = REGION_PALETTE[regionColors[reg]];
+          const val = board[idx];
+          const isClue = clues[idx] !== 0;
+
+          const cell = document.createElement('div');
+          cell.className = 'tectonic-cell aspect-square';
+          cell.setAttribute('role', 'gridcell');
+          cell.setAttribute('tabindex', idx === selectedIndex ? '0' : '-1');
+          cell.dataset.index = idx;
+
+          // Alueen pastellitaustaväri
+          cell.style.backgroundColor = colorObj.bg;
+
+          // Alueiden rajaviivat (paksu tumma #1e293b alueiden välissä, ohut #cbd5e1 alueen sisällä)
+          const topSame = r > 0 && regionId[idx - cols] === reg;
+          const bottomSame = r < rows - 1 && regionId[idx + cols] === reg;
+          const leftSame = c > 0 && regionId[idx - 1] === reg;
+          const rightSame = c < cols - 1 && regionId[idx + 1] === reg;
+
+          cell.style.borderTop = r === 0 ? 'none' : topSame ? '1px solid #cbd5e1' : '3px solid #1e293b';
+          cell.style.borderBottom = r === rows - 1 ? 'none' : bottomSame ? '1px solid #cbd5e1' : '3px solid #1e293b';
+          cell.style.borderLeft = c === 0 ? 'none' : leftSame ? '1px solid #cbd5e1' : '3px solid #1e293b';
+          cell.style.borderRight = c === cols - 1 ? 'none' : rightSame ? '1px solid #cbd5e1' : '3px solid #1e293b';
+
+          // Korostusluokat
+          if (idx === selectedIndex) {
+            cell.classList.add('cell-selected', 'cell-selected-bg');
+          } else {
+            if (reg === selectedRegion) {
+              cell.classList.add('cell-same-region');
+            }
+            if (selectedValue !== 0 && val === selectedValue) {
+              cell.classList.add('cell-same-number');
+            }
+          }
+
+          if (conflicts.has(idx)) {
+            cell.classList.add('cell-conflict');
+          }
+
+          // Ruudun sisältö: numero tai kynämerkinnät
+          if (val !== 0) {
+            const span = document.createElement('span');
+            span.textContent = val;
+            span.style.fontSize = mainFontSize;
+            span.className = 'relative z-10 leading-none select-none';
+
+            if (conflicts.has(idx)) {
+              span.classList.add('text-rose-700', 'font-extrabold');
+            } else if (isClue) {
+              span.classList.add('text-slate-900', 'font-extrabold');
+            } else {
+              span.classList.add('text-blue-600', 'font-bold');
+            }
+            cell.appendChild(span);
+          } else if (notes[idx].size > 0) {
+            const notesContainer = document.createElement('div');
+            notesContainer.className = 'notes-grid';
+            for (let n = 1; n <= 5; n++) {
+              const nEl = document.createElement('span');
+              nEl.className = 'note-item';
+              nEl.style.fontSize = noteFontSize;
+              if (notes[idx].has(n)) {
+                nEl.textContent = n;
+                if (selectedValue === n) {
+                  nEl.classList.add('text-blue-600', 'font-extrabold');
+                }
+              }
+              notesContainer.appendChild(nEl);
+            }
+            cell.appendChild(notesContainer);
+          }
+
+          // Klikkaus- ja kosketustapahtuma
+          cell.addEventListener('click', () => {
+            if (state.selectedIndex !== idx) {
+              state.selectedIndex = idx;
+              SoundFX.select();
+              renderBoard();
+            }
+          });
+
+          gridEl.appendChild(cell);
+        }
+      }
+
+      updateSelectionControls();
+    }
+
+    // Päivittää valitun alueen tiedot ja numeronäppäimistön tilan
+    function updateSelectionControls() {
+      const idx = state.selectedIndex;
+      const reg = state.regionId[idx];
+      const regCells = state.regions[reg];
+      const regSize = regCells.length;
+      const colorObj = REGION_PALETTE[state.regionColors[reg]];
+
+      // Päivitetään yläpuolinen aluebadge
+      const dotEl = document.getElementById('region-color-dot');
+      const textEl = document.getElementById('region-info-text');
+      dotEl.style.backgroundColor = colorObj.dot;
+      textEl.textContent =
+        regSize === 1
+          ? 'Alue: 1 ruutu (numero 1)'
+          : `Alue: ${regSize} ruutua (numerot 1–${regSize})`;
+
+      // Kerätään alueeseen jo sijoitetut numerot
+      const usedInRegion = new Set();
+      for (const cIdx of regCells) {
+        if (state.board[cIdx] !== 0) {
+          usedInRegion.add(state.board[cIdx]);
+        }
+      }
+
+      const isLocked = state.clues[idx] !== 0;
+
+      // Päivitetään 1–5 näppäimet
+      document.querySelectorAll('.num-btn').forEach((btn) => {
+        const num = parseInt(btn.dataset.num, 10);
+        const outOfRange = num > regSize;
+
+        btn.disabled = outOfRange || isLocked || state.isWon;
+        btn.classList.remove(
+          'opacity-30',
+          'cursor-not-allowed',
+          'border-blue-500',
+          'bg-blue-50',
+          'text-blue-700',
+          'border-dashed'
+        );
+
+        if (outOfRange || isLocked) {
+          btn.classList.add('opacity-30', 'cursor-not-allowed');
+        } else if (usedInRegion.has(num) && state.board[idx] !== num) {
+          // Numero on jo käytössä tässä alueessa (hienovarainen vihje pelaajalle)
+          btn.classList.add('opacity-60');
+        }
+
+        if (state.notesMode && !outOfRange && !isLocked) {
+          btn.classList.add('border-dashed', 'border-blue-400');
+        }
+      });
+    }
+
+    function updateNotesModeUI() {
+      const btn = document.getElementById('btn-notes');
+      const badge = document.getElementById('notes-badge');
+      const indicator = document.getElementById('mode-indicator');
+
+      if (state.notesMode) {
+        btn.classList.remove('bg-slate-50', 'border-slate-200', 'text-slate-700');
+        btn.classList.add('bg-blue-600', 'border-blue-600', 'text-white', 'shadow-sm');
+        badge.classList.remove('bg-slate-200', 'text-slate-600');
+        badge.classList.add('bg-blue-500', 'text-white');
+        indicator.textContent = 'Muistiinpanotila';
+        indicator.classList.remove('text-blue-600');
+        indicator.classList.add('text-amber-600');
+      } else {
+        btn.classList.add('bg-slate-50', 'border-slate-200', 'text-slate-700');
+        btn.classList.remove('bg-blue-600', 'border-blue-600', 'text-white', 'shadow-sm');
+        badge.classList.add('bg-slate-200', 'text-slate-600');
+        badge.classList.remove('bg-blue-500', 'text-white');
+        indicator.textContent = 'Normaalitila';
+        indicator.classList.add('text-blue-600');
+        indicator.classList.remove('text-amber-600');
+      }
+
+      updateSelectionControls();
+    }
+
+    function updateDifficultyButtons() {
+      document.querySelectorAll('.diff-btn').forEach((btn) => {
+        const isActive = btn.dataset.diff === state.difficulty;
+        if (isActive) {
+          btn.classList.add('bg-white', 'text-slate-900', 'shadow-xs');
+          btn.classList.remove('text-slate-600', 'hover:text-slate-900');
+        } else {
+          btn.classList.remove('bg-white', 'text-slate-900', 'shadow-xs');
+          btn.classList.add('text-slate-600', 'hover:text-slate-900');
+        }
+      });
+    }
+
+    function updateUndoButton() {
+      document.getElementById('btn-undo').disabled = state.history.length === 0 || state.isWon;
+    }
+
+    let statusTimeout = null;
+    function showStatus(msg) {
+      const el = document.getElementById('status-toast');
+      el.textContent = msg;
+      el.classList.remove('opacity-0');
+      clearTimeout(statusTimeout);
+      statusTimeout = setTimeout(() => {
+        el.textContent = state.isWon ? 'Peli ratkaistu!' : 'Valitse ruutu ja syötä numero';
+      }, 2600);
+    }
+
+    // =========================================================================
+    // AJASTIN
+    // =========================================================================
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60).toString().padStart(2, '0');
+      const s = (sec % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function startTimer() {
+      stopTimer();
+      state.timerInterval = setInterval(() => {
+        if (!state.isPaused && !state.isWon) {
+          state.elapsedSeconds++;
+          document.getElementById('timer-display').textContent = formatTime(state.elapsedSeconds);
+        }
+      }, 1000);
+    }
+
+    function stopTimer() {
+      if (state.timerInterval) {
+        clearInterval(state.timerInterval);
+        state.timerInterval = null;
+      }
+    }
+
+    // =========================================================================
+    // MODAALIT & KONFETTI-EFEKTI
+    // =========================================================================
+    function openRulesModal() {
+      state.isPaused = true;
+      const modal = document.getElementById('rules-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeRulesModal() {
+      state.isPaused = false;
+      const modal = document.getElementById('rules-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function showWinModal() {
+      document.getElementById('win-stat-diff').textContent = DIFFICULTIES[state.difficulty].label;
+      document.getElementById('win-stat-time').textContent = formatTime(state.elapsedSeconds);
+      document.getElementById('win-stat-hints').textContent = state.hintsUsed;
+
+      const modal = document.getElementById('win-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function hideWinModal() {
+      const modal = document.getElementById('win-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function launchConfetti() {
+      const canvas = document.getElementById('confetti-canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      const colors = ['#2563eb', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
+      const particles = Array.from({ length: 90 }, () => ({
+        x: Math.random() * canvas.width,
+        y: -20 - Math.random() * canvas.height * 0.4,
+        w: 6 + Math.random() * 6,
+        h: 8 + Math.random() * 8,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        vx: (Math.random() - 0.5) * 4,
+        vy: 2.5 + Math.random() * 4.5,
+        rot: Math.random() * Math.PI * 2,
+        vRot: (Math.random() - 0.5) * 0.15,
+      }));
+
+      let frame = 0;
+      function animate() {
+        frame++;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        let active = false;
+
+        for (const p of particles) {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.08;
+          p.rot += p.vRot;
+
+          if (p.y < canvas.height + 30) {
+            active = true;
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+            ctx.restore();
+          }
+        }
+
+        if (active && frame < 220) {
+          requestAnimationFrame(animate);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      requestAnimationFrame(animate);
+    }
+
+    // =========================================================================
+    // UUDEN PELIN ALOITUS
+    // =========================================================================
+    function startNewGame(diffKey = state.difficulty) {
+      hideWinModal();
+      state.difficulty = diffKey;
+      updateDifficultyButtons();
+
+      const puzzle = createPuzzle(diffKey);
+      const total = puzzle.rows * puzzle.cols;
+
+      state.rows = puzzle.rows;
+      state.cols = puzzle.cols;
+      state.regions = puzzle.regions;
+      state.regionId = puzzle.regionId;
+      state.regionColors = puzzle.regionColors;
+      state.clues = puzzle.clues;
+      state.solution = puzzle.solution;
+      state.board = new Int8Array(puzzle.clues);
+      state.notes = Array.from({ length: total }, () => new Set());
+      state.history = [];
+      state.hintsUsed = 0;
+      state.elapsedSeconds = 0;
+      state.isPaused = false;
+      state.isWon = false;
+
+      // Valitaan ensimmäinen tyhjä ruutu aloituspisteeksi
+      const firstEmpty = state.clues.findIndex((v) => v === 0);
+      state.selectedIndex = firstEmpty !== -1 ? firstEmpty : 0;
+
+      document.getElementById('timer-display').textContent = '00:00';
+      updateUndoButton();
+      updateNotesModeUI();
+      renderBoard();
+      startTimer();
+      showStatus(`Uusi ${DIFFICULTIES[diffKey].label.toLowerCase()}-peli luotu!`);
+    }
+
+    // =========================================================================
+    // TAPAHTUMAKUUNTELIJAT (HIIRI, KOSKETUS JA NÄPPÄIMISTÖ)
+    // =========================================================================
+    function bindEvents() {
+      // Vaikeustason valitsimet
+      document.querySelectorAll('.diff-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          startNewGame(btn.dataset.diff);
+        });
+      });
+
+      // Yläpalkin painikkeet
+      document.getElementById('btn-new-game').addEventListener('click', () => startNewGame());
+      document.getElementById('btn-rules').addEventListener('click', openRulesModal);
+      document.getElementById('btn-close-rules').addEventListener('click', closeRulesModal);
+      document.getElementById('btn-rules-ok').addEventListener('click', closeRulesModal);
+
+      // Sääntömodaalin sulkeminen taustaa klikkaamalla
+      document.getElementById('rules-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'rules-modal') closeRulesModal();
+      });
+
+      // Voittomodaalin painikkeet
+      document.getElementById('btn-win-close').addEventListener('click', hideWinModal);
+      document.getElementById('btn-play-again').addEventListener('click', () => startNewGame());
+
+      // Äänipainike
+      document.getElementById('btn-sound').addEventListener('click', () => {
+        state.soundEnabled = !state.soundEnabled;
+        document.getElementById('icon-sound-on').classList.toggle('hidden', !state.soundEnabled);
+        document.getElementById('icon-sound-off').classList.toggle('hidden', state.soundEnabled);
+        if (state.soundEnabled) SoundFX.select();
+      });
+
+      // Näytä virheet -kytkin
+      document.getElementById('toggle-errors').addEventListener('change', (e) => {
+        state.showErrors = e.target.checked;
+        renderBoard();
+      });
+
+      // Toimintopainikkeet
+      document.getElementById('btn-notes').addEventListener('click', () => {
+        state.notesMode = !state.notesMode;
+        SoundFX.select();
+        updateNotesModeUI();
+      });
+
+      document.getElementById('btn-undo').addEventListener('click', undoLastAction);
+      document.getElementById('btn-erase').addEventListener('click', handleErase);
+      document.getElementById('btn-hint').addEventListener('click', handleHint);
+
+      // Numeronäppäimistö 1–5
+      document.querySelectorAll('.num-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const num = parseInt(btn.dataset.num, 10);
+          handleNumberInput(num);
+        });
+      });
+
+      // Täysi näppäimistötuki
+      document.addEventListener('keydown', (e) => {
+        // Suljetaan säännöt Esc-näppäimellä
+        const rulesOpen = !document.getElementById('rules-modal').classList.contains('hidden');
+        if (rulesOpen) {
+          if (e.key === 'Escape') closeRulesModal();
+          return;
+        }
+
+        const winOpen = !document.getElementById('win-modal').classList.contains('hidden');
+        if (winOpen) {
+          if (e.key === 'Escape') hideWinModal();
+          return;
+        }
+
+        // Kumoa: Ctrl+Z tai Cmd+Z
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+          e.preventDefault();
+          undoLastAction();
+          return;
+        }
+
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+        const r = Math.floor(state.selectedIndex / state.cols);
+        const c = state.selectedIndex % state.cols;
+
+        // Liikkuminen ruudukossa (Nuolinäppäimet ja WASD)
+        switch (e.key) {
+          case 'ArrowUp':
+          case 'w':
+          case 'W':
+            e.preventDefault();
+            state.selectedIndex = ((r - 1 + state.rows) % state.rows) * state.cols + c;
+            SoundFX.select();
+            renderBoard();
+            return;
+          case 'ArrowDown':
+          case 's':
+          case 'S':
+            e.preventDefault();
+            state.selectedIndex = ((r + 1) % state.rows) * state.cols + c;
+            SoundFX.select();
+            renderBoard();
+            return;
+          case 'ArrowLeft':
+          case 'a':
+          case 'A':
+            e.preventDefault();
+            state.selectedIndex = r * state.cols + ((c - 1 + state.cols) % state.cols);
+            SoundFX.select();
+            renderBoard();
+            return;
+          case 'ArrowRight':
+          case 'd':
+          case 'D':
+            e.preventDefault();
+            state.selectedIndex = r * state.cols + ((c + 1) % state.cols);
+            SoundFX.select();
+            renderBoard();
+            return;
+        }
+
+        // Numerot 1–5
+        if (['1', '2', '3', '4', '5'].includes(e.key)) {
+          e.preventDefault();
+          handleNumberInput(parseInt(e.key, 10), e.shiftKey);
+          return;
+        }
+
+        // Tyhjennys: Backspace, Delete, 0
+        if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') {
+          e.preventDefault();
+          handleErase();
+          return;
+        }
+
+        // Muistiinpanotila: N
+        if (e.key === 'n' || e.key === 'N') {
+          e.preventDefault();
+          state.notesMode = !state.notesMode;
+          SoundFX.select();
+          updateNotesModeUI();
+          return;
+        }
+      });
+
+      // Kosketuspyyhkäisy (Swipe) pelilaudalla ruudun vaihtamiseen mobiilissa
+      let touchStartX = 0;
+      let touchStartY = 0;
+      const gridEl = document.getElementById('tectonic-grid');
+
+      gridEl.addEventListener(
+        'touchstart',
+        (e) => {
+          if (e.touches.length === 1) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+          }
+        },
+        { passive: true }
+      );
+
+      gridEl.addEventListener(
+        'touchend',
+        (e) => {
+          if (e.changedTouches.length !== 1) return;
+          const dx = e.changedTouches[0].clientX - touchStartX;
+          const dy = e.changedTouches[0].clientY - touchStartY;
+          const minSwipe = 34;
+          if (Math.abs(dx) < minSwipe && Math.abs(dy) < minSwipe) return;
+
+          const r = Math.floor(state.selectedIndex / state.cols);
+          const c = state.selectedIndex % state.cols;
+
+          if (Math.abs(dx) > Math.abs(dy)) {
+            const nextC = dx > 0 ? Math.min(state.cols - 1, c + 1) : Math.max(0, c - 1);
+            state.selectedIndex = r * state.cols + nextC;
+          } else {
+            const nextR = dy > 0 ? Math.min(state.rows - 1, r + 1) : Math.max(0, r - 1);
+            state.selectedIndex = nextR * state.cols + c;
+          }
+          SoundFX.select();
+          renderBoard();
+        },
+        { passive: true }
+      );
+    }
+
+    // Käynnistetään peli sivun latauduttua
+    window.addEventListener('DOMContentLoaded', () => {
+      bindEvents();
+      startNewGame('easy');
+    });
+  </script>
+</body>
+</html>
